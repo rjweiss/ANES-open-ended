@@ -2,7 +2,9 @@
 
 #For now, let's just work with the terrorism data
 
-data <- as.matrix(terrorism$Verbatim[!is.na(terrorism$Verbatim)])
+data <- as.matrix(terrorism$verbatim_terr[!is.na(terrorism$verbatim_terr)])
+
+data.corpus <- Corpus(VectorSource(data))
 
 #cleaning corpus
 #data.stopwords <- c(stopwords('english'),'data','firefox','private')
@@ -50,8 +52,8 @@ fig <- ggplot(data = as.data.frame(cos.mds), aes(
   y = y,
   label = row.names(data))) +
     geom_point(aes(alpha = 0.5)) +
-    opts(legend.position = "none")
-ggsave(fig, file= "/Users/Rebecca/Dropbox/research/ANES/plots/p_cos_mds.pdf")
+    opts(legend.position = "none", title = 'Respondents in 2D using Cosine Distance and Classical MDS')
+ggsave(fig, file= "/Users/Rebecca/Dropbox/research/ANES/plots/cos_mds.pdf")
 
 cos.sam <- sammon(cosdist.mat)
 
@@ -64,20 +66,22 @@ fig <- ggplot(data = cos.sam, aes(
   label = row.names(data))) +
     geom_point(aes(alpha = 0.5)) +
     opts(legend.position = "none")
-ggsave(fig, file= "/Users/Rebecca/Dropbox/research/ANES/plots/p_cos_sam.pdf")
+ggsave(fig, file= "/Users/Rebecca/Dropbox/research/ANES/plots/cos_sam.pdf")
 
 
 ###################
 #NUMBER OF CLUSTERS
 #chosen arbitrarily
-nclust = 8
+nclust = 6
+#n most frequent numbers
+nfreq = 20
 ###################
 
 #constructing clustering models
-m1 <- kmeans(cosdist.mat, centers = nclust, iter.max = 10)
-#m2 <- multmixEM(data.dtm.mat, k = nclust, lambda=NULL, theta=NULL, maxit=1000, epsilon=1e-08, verb=FALSE)
+m1 <- kmeans(cosdist.mat, centers = nclust, iter.max = 1000)
+m2 <- multmixEM(data.dtm.mat, k = nclust, lambda=NULL, theta=NULL, maxit=1000, epsilon=1e-08, verb=FALSE)
 
-#c <- apply(m2$posterior, 1, which.max)
+c <- apply(m2$posterior, 1, which.max)
 
 #justin grimmer's code for monroe, colaresi, and quinn "lexical feature selection"
 fightin <- function(clust.num, clustering, data){
@@ -112,9 +116,7 @@ fightin <- function(clust.num, clustering, data){
   return(scores)
 }
 
-#ncol = number of clusters
-#n most frequent numbers
-nfreq = 20
+
 
 #k-means
 m1.words <- matrix(NA, nrow = nfreq, ncol = nclust)
@@ -147,12 +149,48 @@ p <- ggplot(data = m1.df, aes(
          axis.text.y = theme_blank(),
          axis.ticks = theme_blank(),
          legend.position = "none")
-ggsave(filename="/Users/Rebecca/Dropbox/research/ANES/plots/p_kmeans_freq.pdf", plot=p, device=pdf)
+ggsave(filename="/Users/Rebecca/Dropbox/research/ANES/plots/kmeans_freq.pdf", scale = .85, plot=p, device=pdf)
+
+#mixture of multinomial distributions
+m2.words <- matrix(NA, nrow = nfreq, ncol = nclust)
+m2.scores <- matrix(NA, nrow = nfreq, ncol = nclust)
+m2.mat <- matrix(NA, nrow = nfreq * nclust, ncol = 3)
+
+for(j in 1:nclust){
+  temp <- fightin(j, c, data.dtm.mat)
+  m2.words[,j] <- colnames(data.dtm.mat)[order(temp, decreasing=T)[1:nfreq]]
+  m2.scores[,j] <- temp[order(temp, decreasing=T)[1:nfreq]]
+}
+
+m2.mat[,1] = as.character(m2.words)
+m2.mat[,2] = as.character(m2.scores)
+m2.mat[,3] = rep(nclust:1, each=nfreq)
+
+m2.df <- as.data.frame(m2.mat, stringsAsFactors = FALSE)
+names(m2.df) = c("words","scores","cluster")
+m2.df$scores <- as.numeric(m2.df$scores)
+
+#plotting multimixEM in-cluster word frequencies
+p <- ggplot(data = m2.df, aes(
+  x = log(scores),
+  y = reorder(words, log(scores), max),
+  label = words)) +
+    geom_text(hjust=1, aes(size = as.numeric(log(scores)))) +
+    facet_wrap (~ cluster, scales = "free_y") +
+    ylab("Words in order of log(Scores)") +
+    xlab("log(Scores)") +
+    opts(title = "Clusters Defined by Word Frequencies",
+         axis.text.y = theme_blank(),
+         axis.ticks = theme_blank(),
+         legend.position = "none")
+ggsave(filename="/Users/Rebecca/Dropbox/research/ANES/plots/multimixEM_freq.pdf", scale = .85, plot=p, device=pdf)
+
+#coloring cluster graphs
 
 d <- as.data.frame(cos.mds)
 colnames(d) = c("x","y")
 d$cluster1 <- m1$cluster
-#d$cluster2 <- c
+d$cluster2 <- c
 
 p <- ggplot(data = d, aes(
   x = x,
@@ -160,7 +198,18 @@ p <- ggplot(data = d, aes(
   color = factor(cluster1))) +
     geom_point(alpha = 0.6) +
     scale_colour_brewer(name = "Clusters", palette = "Set1") +
-    opts(title = "Classical MDS using k-means and cosine distance",
+    opts(title = "Respondents in 2D: k-means",
          legend.position=c(.9,.75), 
          legend.background = theme_rect(fill="white"))
-ggsave(filename="/Users/Rebecca/Dropbox/research/ANES/plots/p_kmeans_cosdist_clusters.pdf",plot = p, device = pdf)
+ggsave(filename="/Users/Rebecca/Dropbox/research/ANES/plots/kmeans_cosdist_clusters.pdf", scale = .85, plot = p, device = pdf)
+
+p <- ggplot(data = d, aes(
+  x = x,
+  y = y,
+  color = factor(cluster2))) +
+    geom_point(alpha = 0.6) +
+    scale_colour_brewer(name = "Clusters", palette = "Set1") +
+    opts(title = "Respondents in 2D: MultiMixEM",
+         legend.position=c(.9,.75), 
+         legend.background = theme_rect(fill="white"))
+ggsave(filename="/Users/Rebecca/Dropbox/research/ANES/plots/multimixEM_cosdist_clusters.pdf", scale = .85, plot = p, device = pdf)
